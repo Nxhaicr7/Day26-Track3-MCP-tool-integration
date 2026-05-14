@@ -1,88 +1,38 @@
-# Lab: Build a Database MCP Server with FastMCP and SQLite
+# Báo Cáo Lab: Xây Dựng MCP Server Cho SQLite (FastMCP)
+Nguyễn Xuân Hải - 2A202600245
+## 1) Mục tiêu
 
-## Goal
-
-Build a Model Context Protocol (MCP) server using FastMCP that exposes a small database through:
+Xây dựng một MCP server bằng FastMCP, kết nối SQLite và cung cấp đúng 3 tools:
 
 - `search`
 - `insert`
 - `aggregate`
 
-You must also expose the database schema as an MCP resource, test the server with Inspector or equivalent tooling, and show the server working from at least one MCP client.
-
-## Learning Outcomes
-
-By the end of this lab, students should be able to:
-
-- explain what MCP tools and resources are
-- build a FastMCP server in Python
-- connect FastMCP to a SQLite database
-- safely validate database requests before executing SQL
-- expose dynamic schema context through `@mcp.resource(...)`
-- test tool schemas, normal calls, and error responses
-- connect the server to an MCP client such as Claude Code, Codex, or Gemini CLI
-
-## Required Features
-
-### Part 1: MCP Server
-
-Implement a FastMCP server that exposes exactly these tool categories:
-
-1. `search`
-2. `insert`
-3. `aggregate`
-
-Your server may use SQLite for the main implementation. If you want to support PostgreSQL too, design the code so the database layer can be swapped later.
-
-### Part 2: Resource
-
-Expose database schema information as MCP resources:
-
-- one resource for the full database schema
-- one dynamic resource template for a single table schema
-
-Suggested URIs:
+Ngoài ra, server phải expose schema dưới dạng MCP resources:
 
 - `schema://database`
 - `schema://table/{table_name}`
 
-### Part 3: Validation and Error Handling
+Project này dùng dataset `TFT_Challenger_MatchData.csv` và import vào SQLite thành bảng `tft_matches` để demo.
 
-Your tools must reject unsafe or invalid requests:
+## 2) Dữ liệu và mô hình
 
-- unknown table names
-- unknown column names
-- unsupported filter operators
-- invalid aggregate requests
-- empty inserts
+- Nguồn dữ liệu: `TFT_Challenger_MatchData.csv`
+- Bảng SQLite: `tft_matches`
+- Các cột:
+  - `id` (INTEGER, PRIMARY KEY)
+  - `gameId` (TEXT)
+  - `gameDuration` (REAL)
+  - `level` (INTEGER)
+  - `lastRound` (INTEGER)
+  - `Ranked` (INTEGER)
+  - `ingameDuration` (REAL)
+  - `combination` (TEXT)
+  - `champion` (TEXT)
 
-Do not build SQL by blindly concatenating raw user input.
+Ghi chú: `combination` và `champion` được lưu dạng chuỗi (string) đúng theo CSV gốc.
 
-### Part 4: Testing and Verification
-
-Verify all of the following:
-
-1. the server starts correctly
-2. the three tools are discoverable
-3. the schema resource is discoverable
-4. valid tool calls return useful results
-5. invalid tool calls return clear errors
-6. at least one MCP client can connect and use the server
-
-### Part 5: Demo Deliverables
-
-Prepare:
-
-- GitHub repository
-- setup instructions
-- tool descriptions
-- testing steps
-- at least one client configuration example
-- short demo video, around 2 minutes
-
-Inspector screenshots are recommended if you use MCP Inspector.
-
-## Suggested Project Structure
+## 3) Cấu trúc thư mục
 
 ```text
 implementation/
@@ -90,92 +40,237 @@ implementation/
   init_db.py
   mcp_server.py
   verify_server.py
-  tests/
+  test/
     test_server.py
+image/
+TFT_Challenger_MatchData.csv
+.codex/config.toml
 ```
 
-## Recommended Data Model
+## 4) Cài đặt và chạy nhanh
 
-Use a small relational dataset so `search`, `insert`, and `aggregate` are easy to demo. Example:
+### 4.1 Tạo môi trường Python và cài FastMCP
 
-- `students`
-- `courses`
-- `enrollments`
-
-## Example Tasks to Demonstrate
-
-- search all students in cohort `A1`
-- insert a new student
-- count rows in a table
-- compute average score by cohort
-- read the full schema resource
-- read `schema://table/students`
-- show an invalid request, such as searching a missing table
-
-## FastMCP and Inspector References
-
-- FastMCP quickstart: https://gofastmcp.com/v2/getting-started/quickstart
-- FastMCP resources: https://gofastmcp.com/v2/servers/resources
-- MCP Inspector: https://modelcontextprotocol.io/docs/tools/inspector
-
-## Client Setup Notes
-
-### Claude Code
-
-Anthropic documents local JSON config and `claude mcp add` flows here:
-
-- https://code.claude.com/docs/en/mcp
-
-Claude Code supports MCP resources via `@server:resource-uri` references and supports environment variable expansion in `.mcp.json`.
-
-### Codex
-
-OpenAI documents Codex MCP setup here:
-
-- https://developers.openai.com/learn/docs-mcp
-
-Codex supports MCP server configuration through the CLI and `~/.codex/config.toml`.
-
-### Gemini CLI
-
-Gemini CLI has a built-in MCP manager. In the verified local workflow, the simplest path is:
+Từ thư mục repo:
 
 ```bash
-gemini mcp add sqlite-lab /ABSOLUTE/PATH/TO/python /ABSOLUTE/PATH/TO/implementation/mcp_server.py --description "SQLite lab FastMCP server" --timeout 10000
-gemini mcp list
+python3 -m venv .venv
+.venv/bin/pip install fastmcp
 ```
 
-Gemini CLI also documents configuration details here:
+Kiểm tra:
 
-- https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md
+```bash
+.venv/bin/python -c "import fastmcp; print('fastmcp ok')"
+```
 
-Expected outcome:
+### 4.2 Tạo/seed database
 
-- the server appears as `Connected`
-- Gemini can discover `search`, `insert`, and `aggregate`
-- a headless smoke test works with `gemini --allowed-mcp-server-names sqlite-lab --yolo -p "..."`
+DB nằm ở `implementation/sqlite_lab.db`. Khi MCP tool chạy lần đầu, DB cũng sẽ tự được tạo/seed (nếu đang trống).
 
-### Antigravity
+Nếu muốn reset và seed lại:
 
-Antigravity commonly uses an `mcp_config.json` file with a shape similar to Gemini CLI. Verify the current product behavior in your installed version before grading against exact UI steps.
+```bash
+.venv/bin/python -c "from implementation.init_db import create_database; print(create_database(reset=True, seed_limit=5000))"
+```
 
-## Deliverable Checklist
+Ghi chú về hiệu năng:
 
-- working FastMCP server
-- SQLite database and seed data
-- `search`, `insert`, `aggregate` tools
-- schema resource and schema resource template
-- verification steps
-- automated tests or repeatable verification script
-- client configuration example
-- README with setup and demo steps
-- Inspector startup command or helper script
-- at least one verified Gemini CLI or Claude/Codex client test
+- CSV ~ 80k dòng, nên mặc định seed theo `seed_limit` (ví dụ 5000) để demo nhanh.
+- Nếu muốn seed toàn bộ CSV: dùng `seed_limit=None` (sẽ chậm hơn).
 
-## Bonus
+### 4.3 Chạy unit test và verify
 
-Optional bonus:
+Unit tests:
 
-- add authentication for SSE or HTTP transport
-- support both SQLite and PostgreSQL with the same MCP surface
-- add richer output annotations or pagination
+```bash
+.venv/bin/python -m unittest implementation.test.test_server
+```
+
+Script verify (demo nhanh các tool/resource và một case lỗi):
+
+```bash
+.venv/bin/python implementation/verify_server.py
+```
+
+## 5) Mô tả tools và resources
+
+### 5.1 Tool `search`
+
+Mục đích: truy vấn dữ liệu theo bảng, filter, sort, phân trang.
+
+Các tham số chính:
+
+- `table`: tên bảng, hiện dùng `tft_matches`
+- `filters`: list các điều kiện, dạng `{"column": "...", "op": "...", "value": ...}`
+- `columns`: danh sách cột cần trả về (bỏ qua thì trả hết)
+- `limit`, `offset`: phân trang
+- `order_by`, `descending`: sắp xếp
+
+Validation:
+
+- reject table/column không tồn tại
+- reject operator không hỗ trợ (`=`, `!=`, `>`, `>=`, `<`, `<=`, `like`, `in`)
+- query dùng placeholder `?` để tránh SQL injection
+
+### 5.2 Tool `insert`
+
+Mục đích: chèn một record vào bảng.
+
+Validation:
+
+- reject `values` rỗng
+- reject cột không tồn tại
+- trả về payload đã insert (kèm `inserted_id`)
+
+### 5.3 Tool `aggregate`
+
+Mục đích: thống kê dữ liệu theo `metric` và tuỳ chọn `group_by`.
+
+Hỗ trợ:
+
+- `count`, `avg`, `sum`, `min`, `max`
+
+Validation:
+
+- reject metric không hỗ trợ
+- với `avg/sum/min/max` bắt buộc có `column`
+- reject group_by/column không tồn tại
+
+### 5.4 Resources
+
+- `schema://database`: trả về schema toàn bộ DB
+- `schema://table/tft_matches`: trả về schema của bảng `tft_matches`
+
+## 6) Cấu hình và test bằng Codex (khuyến nghị)
+
+Project đã có sẵn cấu hình ở `.codex/config.toml` để Codex dùng đúng Python trong venv:
+
+```toml
+[mcp_servers.sqlite_lab]
+command = "/home/nxhai/AI_thucchien/Day26-Track3-MCP-tool-integration/.venv/bin/python"
+args = ["/home/nxhai/AI_thucchien/Day26-Track3-MCP-tool-integration/implementation/mcp_server.py"]
+```
+
+Sau khi chỉnh config, restart Codex để nó reload MCP servers.
+
+### 6.1 Kịch bản demo (copy/paste)
+
+1) `search` (filter + limit):
+
+```json
+{"table":"tft_matches","filters":[{"column":"Ranked","op":"=","value":1}],"limit":5}
+```
+
+2) `search` (columns + order + pagination):
+
+```json
+{"table":"tft_matches","filters":[{"column":"Ranked","op":"=","value":1}],"columns":["gameId","Ranked","gameDuration"],"order_by":"gameDuration","descending":false,"limit":5,"offset":5}
+```
+
+3) `insert`:
+
+```json
+{"table":"tft_matches","values":{"gameId":"LOCAL_DEMO","gameDuration":1234.5,"level":8,"lastRound":30,"Ranked":1,"ingameDuration":1200.0,"combination":"{}","champion":"{}"}}
+```
+
+4) `aggregate`:
+
+```json
+{"table":"tft_matches","metric":"count"}
+```
+
+```json
+{"table":"tft_matches","metric":"avg","column":"level","group_by":"Ranked"}
+```
+
+5) Resources:
+
+- đọc `schema://database`
+- đọc `schema://table/tft_matches`
+
+6) Case lỗi (để chứng minh validation):
+
+- table sai:
+
+```json
+{"table":"missing_table"}
+```
+
+- column sai:
+
+```json
+{"table":"tft_matches","filters":[{"column":"nope","op":"=","value":1}]}
+```
+
+- op sai:
+
+```json
+{"table":"tft_matches","filters":[{"column":"Ranked","op":"between","value":[1,2]}]}
+```
+
+- insert rỗng:
+
+```json
+{"table":"tft_matches","values":{}}
+```
+
+## 7) Test bằng Inspector (tuỳ chọn)
+
+Nếu dùng MCP Inspector:
+
+```bash
+mkdir -p .npm-cache
+NPM_CONFIG_CACHE="$PWD/.npm-cache" npx -y @modelcontextprotocol/inspector \
+  /home/nxhai/AI_thucchien/Day26-Track3-MCP-tool-integration/.venv/bin/python \
+  /home/nxhai/AI_thucchien/Day26-Track3-MCP-tool-integration/implementation/mcp_server.py
+```
+
+Trong Inspector, kiểm tra:
+
+- tools xuất hiện: `search`, `insert`, `aggregate`
+- resources xuất hiện: `schema://database`, `schema://table/{table_name}`
+- gọi thử đúng và sai theo mục (6.1)
+
+## 8) Chụp screenshot làm minh chứng 
+
+### 8.1 Chụp ảnh (đủ minh chứng rubric)
+
+Thư mục ảnh minh chứng: `image/` (đã có sẵn trong repo).
+
+- `image/Giao_dien_Codex.png`: giao diện Codex/khung chat
+- `image/search.png`: demo `search`
+- `image/insert.png`: demo `insert`
+- `image/aggregate.png`: demo `aggregate`
+- `image/resource_schema.png`: demo đọc resource schema
+- `image/error_case.png`: demo input lỗi và message error rõ ràng
+
+1) Ảnh tool discovery:
+   - chụp đoạn chat thể hiện Codex đã gọi được `sqlite_lab.search`/`sqlite_lab.insert`/`sqlite_lab.aggregate` (hoặc Codex liệt kê được danh sách tools của server).
+
+2) Ảnh resource discovery:
+   - chụp đoạn chat thể hiện đọc được `schema://database` hoặc `schema://table/tft_matches` và trả về schema JSON.
+
+3) Ảnh một tool call hợp lệ có dữ liệu trả về:
+   - ví dụ `search` có `limit/offset/order_by` và trả về `rows`.
+
+4) Ảnh một tool call có side effect:
+   - `insert` thành công (chụp phần `inserted_id` và `values`).
+
+5) Ảnh một tool call không hợp lệ và error rõ ràng:
+   - ví dụ table sai (`missing_table`) hoặc op sai (`between`).
+
+### 8.2 Hướng dẫn kịch bản chụp screenshot bằng Codex 
+
+1) Reset DB để số liệu “đẹp” và tránh side effects cũ:
+
+```bash
+.venv/bin/python -c "from implementation.init_db import create_database; print(create_database(reset=True, seed_limit=2000))"
+```
+
+2) Restart Codex.
+3) Lần lượt gửi các prompt/demo ở mục (6.1). Khi chat, nên ghi rõ tool name, ví dụ:
+
+`Use MCP server sqlite_lab. Call tool search with: {...}`
+
+4) Sau mỗi bước quan trọng (discovery / valid call / insert / error), chụp 1 ảnh.
